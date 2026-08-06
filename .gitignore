@@ -1,0 +1,6 @@
+*.test
+/fone/fone
+/sftp-config.json
+/main
+/main.go
+/main_test.go

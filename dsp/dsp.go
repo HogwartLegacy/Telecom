@@ -1,0 +1,106 @@
+// Copyright 2020 Justine Alexandra Roberts Tunney
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Digital Signal Processing
+
+package dsp
+
+import (
+	"math/bits"
+)
+
+const ulawBias = 0x84
+
+// Compresses a PCM audio sample into a G.711 μ-Law sample.
+func LinearToUlaw(linear int16) byte {
+	var sample int32
+	var mask byte
+	if linear >= 0 {
+		sample = int32(linear) + ulawBias
+		mask = byte(0xff)
+	} else {
+		sample = ulawBias - int32(linear)
+		mask = 0x7F
+	}
+
+	// segment = floor(log2(sample|0xFF)) - 7
+	segment := int32(31-bits.LeadingZeros32(uint32(sample|0xFF))) - 7
+	if segment >= 8 {
+		return mask ^ 0x7F
+	}
+
+	mantissa := (sample >> (segment + 3)) & 0x0F
+	return mask ^ byte((segment<<4)|mantissa)
+}
+
+// Turns a μ-Law byte back into an audio sample.
+func UlawToLinear(ulaw byte) int16 {
+	u := ^ulaw
+	sample := int32((u&0x0F)<<3) + ulawBias
+	exponent := (u & 0x70) >> 4
+	sample <<= exponent
+
+	if (u & 0x80) != 0 {
+		return int16(ulawBias - sample)
+	}
+	return int16(sample - ulawBias)
+}
+
+// Compresses a PCM audio sample into a G.711 A-law sample.
+func LinearToAlaw(linear int16) byte {
+	var sign byte
+	var sample int32
+
+	if linear >= 0 {
+		sign = 0x80
+		sample = int32(linear) >> 3
+	} else {
+		sign = 0x00
+		sample = int32(^linear) >> 3
+	}
+	if sample > 4095 {
+		sample = 4095
+	}
+
+	var alaw byte
+	if sample < 32 {
+		alaw = byte(sample >> 1)
+	} else {
+		segment := int32(31-bits.LeadingZeros32(uint32(sample))) - 4
+		mantissa := (sample >> segment) & 0x0F
+		alaw = byte((segment << 4) | mantissa)
+	}
+
+	return (alaw | sign) ^ 0x55
+}
+
+// Turns an A-law byte back into an audio sample.
+func AlawToLinear(alaw byte) int16 {
+	a := alaw ^ 0x55
+	segment := (a >> 4) & 0x07
+	mantissa := int32(a & 0x0F)
+
+	var sample int32
+	if segment == 0 {
+		sample = (mantissa << 1) | 1
+	} else {
+		sample = ((mantissa | 0x10) << segment) | (1 << (segment - 1))
+	}
+	sample <<= 3
+
+	if a&0x80 != 0 {
+		return int16(sample)
+	}
+	return int16(-sample)
+}
